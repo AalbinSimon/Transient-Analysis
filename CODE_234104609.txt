@@ -1,0 +1,93 @@
+import numpy as np
+import math
+import sympy as sp
+import pandas as pd
+
+pi = math.pi
+g = 9.80655
+
+# fluid properties
+K = 2 * 10**9  # Pascals, Bulk modulus
+rho = 1000  # kg/m3, Density
+
+# pipe properties
+D = 0.3  # m, Diameter 
+E = 2.15 * 10**9  # Pascals, Modulus of Elasticity
+e = 0.01  # m, Thickness 
+L = 100  # length of pipe, m
+f = 0.05  # Darcy's friction factor
+
+A = (pi/4)*D*D
+R = f/(2*D*A)
+a = sp.sqrt((K/rho)/(1+(D*K)/(E*e)))
+
+# reservoir properties
+H_res = 10 #Reservoir head
+Cd = 0.8
+Q_res = Cd * A * sp.sqrt(2*g*H_res)
+k_entry = 0.5
+
+# Discretization
+n = 5  # no. of sections
+del_x = L/n
+del_t = del_x/a
+
+# initial conditions
+H_0 = []
+Q_0 = []
+for node in range(1, 7):
+    H_0.append(H_res)
+    Q_0.append(Q_res)
+
+H_matrix = np.array([H_0])
+Q_matrix = np.array([Q_0])
+
+j = 1
+while j*del_t <= (8*L)/a:
+    H_values = []
+    Q_values = []
+    for i in range(1, 7):
+        # Characteristic equations
+        Ca = (g*A)/a
+        if i-2 >= 0:
+            Cp = Q_matrix[j-1, i-2] + Ca*H_matrix[j-1, i-2] - R*Q_matrix[j-1, i-2]*abs(Q_matrix[j-1, i-2])*del_t
+        else:
+            Cp = None
+        try:
+            Cn = Q_matrix[j-1, i] - Ca*H_matrix[j-1, i] - R*Q_matrix[j-1, i]*abs(Q_matrix[j-1, i])*del_t
+        except IndexError:
+            Cn = None
+        # reservoir boundary
+        if i == 1:
+            k1 = Ca*(1 + k_entry)/(2*g*A*A)
+            Qp = (-1 + sp.sqrt(1 + 4*k1*(Cn + Ca*H_res)))/(2*k1)
+            Hp = (Qp - Cn)/Ca
+            H_values.append(Hp)
+            Q_values.append(Qp)
+
+        # valve boundary
+        elif i == n+1:
+            Cv = 0
+            Qp = 0.5*(-Cv + sp.sqrt((Cv**2) + (4*Cp*Cv)))
+            Hp = (1/Ca)*(Cp - Qp)
+            H_values.append(Hp)
+            Q_values.append(Qp)
+
+        # MoC
+        else:
+            Qp = 0.5*(Cp + Cn)
+            Hp = (Cp - Cn)/(2*Ca)
+            H_values.append(Hp)
+            Q_values.append(Qp)
+
+    H_values = np.array(H_values)
+    Q_values = np.array(Q_values)
+
+    H_matrix = np.vstack([H_matrix, H_values])
+    Q_matrix = np.vstack([Q_matrix, Q_values])
+
+    j += 1
+
+H_final = pd.DataFrame(H_matrix)
+Q_final = pd.DataFrame(Q_matrix)
+print('OK')
